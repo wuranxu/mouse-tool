@@ -9,21 +9,37 @@ import (
 	"time"
 )
 
-const Key = "mouse:server:node:"
+// Status server status
+type Status string
 
-var (
-	ErrAppendNode = errors.New("failed to register machine to etcd")
+const (
+	Ready   Status = "Ready"
+	Working Status = "Working"
+	Error   Status = "Error"
 )
 
-type EtcdClient struct {
-	cli *v3.Client
-	// local port
-	ip   string
-	port int
-	quit chan struct{}
+var (
+	ErrRegisterToEtcd    = errors.New("failed to register machine to etcd")
+	ErrUpdateServerState = errors.New("failed to update server state")
+)
+
+type MachineStatus struct {
+	Addr  string `json:"addr"`
+	State Status `json:"state"`
 }
 
-func NewEtcdClient(port int, endpoints []string) (*EtcdClient, error) {
+type EtcdClient struct {
+	cli     *v3.Client
+	ip      string
+	leaseId v3.LeaseID
+	// local port
+	port int
+	// key prefix
+	prefix string
+	quit   chan struct{}
+}
+
+func NewEtcdClient(prefix string, port int, endpoints []string) (*EtcdClient, error) {
 	cli, err := v3.New(v3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: 5 * time.Second,
@@ -32,10 +48,15 @@ func NewEtcdClient(port int, endpoints []string) (*EtcdClient, error) {
 		//log.Fatal("failed to connect etcd server, error: ", err)
 		return nil, err
 	}
-	return &EtcdClient{cli: cli, port: port, quit: make(chan struct{})}, nil
+	return &EtcdClient{
+		cli:    cli,
+		port:   port,
+		quit:   make(chan struct{}),
+		prefix: prefix,
+	}, nil
 }
 
-func (e *EtcdClient) AppendToEtcd() error {
+func (e *EtcdClient) Register(status Status) error {
 	// get local ip
 	var err error
 	if e.ip, err = GetExternalIP(); err != nil {
@@ -45,23 +66,45 @@ func (e *EtcdClient) AppendToEtcd() error {
 	addr := fmt.Sprintf("%s:%d", e.ip, e.port)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	grant, err := e.cli.Grant(ctx, 5)
+	grant, err := e.cli.Grant(ctx, 8)
 	if err != nil {
-		log.Println(ErrAppendNode, err)
-		return ErrAppendNode
+		log.Println(ErrRegisterToEtcd, err)
+		return ErrRegisterToEtcd
 	}
-	_, err = e.cli.Put(ctx, Key+e.ip, addr, v3.WithLease(grant.ID))
+	e.leaseId = grant.ID
+	_, err = e.cli.Put(ctx, e.prefix+":"+addr, string(status), v3.WithLease(grant.ID))
 	if err != nil {
-		// handle error!
-		log.Println(ErrAppendNode, err)
-		return ErrAppendNode
+		log.Println(ErrRegisterToEtcd, err)
+		return ErrRegisterToEtcd
 	}
 	go e.RentLease(grant.ID)
 	return nil
 }
 
+// UpdateStatus update key status
+func (e *EtcdClient) UpdateStatus(status Status) error {
+	if e.leaseId == 0 {
+		return e.Register(status)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addr := fmt.Sprintf("%s:%d", e.ip, e.port)
+	_, err := e.cli.Put(ctx, e.prefix+":"+addr, string(status), v3.WithLease(e.leaseId))
+	if err != nil {
+		log.Println(ErrRegisterToEtcd, err)
+		return ErrRegisterToEtcd
+	}
+	return nil
+}
+
 func (e *EtcdClient) Close() {
 	defer e.cli.Close()
+	// delete key
+	e.reset()
+}
+
+// reset reset node status
+func (e *EtcdClient) reset() {
 	e.quit <- struct{}{}
 }
 
@@ -72,15 +115,32 @@ func (e *EtcdClient) RentLease(key v3.LeaseID) {
 	for {
 		select {
 		case <-ticker.C:
+			// rent
 			_, err := e.cli.KeepAlive(context.TODO(), key)
 			if err != nil {
 				log.Println("rent lease failed, please check...")
 			}
 		case <-e.quit:
-			_, err := e.cli.Delete(context.TODO(), Key+e.ip)
+			// remove machine
+			_, err := e.cli.Delete(context.TODO(), e.prefix+":"+e.ip)
 			if err != nil {
 				log.Println("rent lease failed, please check...")
 			}
 		}
 	}
+}
+
+// ListMachine machine list
+func (e *EtcdClient) ListMachine() ([]*MachineStatus, error) {
+	ans := make([]*MachineStatus, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	keys, err := e.cli.Get(ctx, e.prefix, v3.WithPrefix())
+	if err != nil {
+		return ans, err
+	}
+	for _, kv := range keys.Kvs {
+		ans = append(ans, &MachineStatus{Addr: string(kv.Key), State: Status(kv.Value)})
+	}
+	return ans, nil
 }
