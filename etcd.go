@@ -91,8 +91,8 @@ func (e *EtcdClient) UpdateStatus(status Status) error {
 	addr := fmt.Sprintf("%s:%d", e.ip, e.port)
 	_, err := e.cli.Put(ctx, e.prefix+":"+addr, string(status), v3.WithLease(e.leaseId))
 	if err != nil {
-		log.Println(ErrRegisterToEtcd, err)
-		return ErrRegisterToEtcd
+		log.Println(ErrUpdateServerState, err)
+		return ErrUpdateServerState
 	}
 	return nil
 }
