@@ -1,12 +1,18 @@
 module github.com/wuranxu/mouse-tool
 
-require go.etcd.io/etcd/client/v3 v3.5.7
+require (
+	github.com/influxdata/influxdb-client-go/v2 v2.12.2
+	go.etcd.io/etcd/client/v3 v3.5.7
+)
 
 require (
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
+	github.com/deepmap/oapi-codegen v1.8.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.7 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
