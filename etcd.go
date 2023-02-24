@@ -108,6 +108,10 @@ func (e *EtcdClient) reset() {
 	e.quit <- struct{}{}
 }
 
+func (e *EtcdClient) Host() string {
+	return e.ip
+}
+
 // RentLease make a new rent for lease to avoid key expired
 func (e *EtcdClient) RentLease(key v3.LeaseID) {
 	// every 3 second keepalive
