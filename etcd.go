@@ -116,11 +116,24 @@ func (e *EtcdClient) Host() string {
 func (e *EtcdClient) RentLease(key v3.LeaseID) {
 	// every 3 second keepalive
 	ticker := time.NewTicker(3 * time.Second)
+	var (
+		data = make(<-chan *v3.LeaseKeepAliveResponse)
+		err  error
+	)
+	go func() {
+		for {
+			select {
+			case <-data:
+			case <-e.quit:
+				return
+			}
+		}
+	}()
 	for {
 		select {
 		case <-ticker.C:
 			// rent
-			_, err := e.cli.KeepAlive(context.TODO(), key)
+			data, err = e.cli.KeepAlive(context.TODO(), key)
 			if err != nil {
 				log.Println("rent lease failed, please check...")
 			}
