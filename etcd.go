@@ -115,28 +115,16 @@ func (e *EtcdClient) Host() string {
 // RentLease make a new rent for lease to avoid key expired
 func (e *EtcdClient) RentLease(key v3.LeaseID) {
 	// every 3 second keepalive
-	ticker := time.NewTicker(3 * time.Second)
-	var (
-		data = make(<-chan *v3.LeaseKeepAliveResponse)
-		err  error
-	)
-	go func() {
-		for {
-			select {
-			case <-data:
-			case <-e.quit:
-				return
-			}
-		}
-	}()
+	ticker := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-ticker.C:
 			// rent
-			data, err = e.cli.KeepAlive(context.TODO(), key)
+			data, err := e.cli.KeepAlive(context.TODO(), key)
 			if err != nil {
 				log.Println("rent lease failed, please check...")
 			}
+			<-data
 		case <-e.quit:
 			// remove machine
 			_, err := e.cli.Delete(context.TODO(), e.prefix+":"+e.ip)
